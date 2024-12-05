@@ -1,0 +1,50 @@
+# Data manipulation and processing
+pandas==2.0.3
+numpy==1.23.4
+scikit-learn==1.3.0
+scipy==1.10.0
+matplotlib==3.7.1
+seaborn==0.12.2
+plotly==5.15.0
+
+# Deep learning framework (PyTorch)
+torch==2.1.0
+torchvision==0.15.0
+torchaudio==2.1.0
+
+# For experimentation and model training
+tensorboard==2.14.0
+wandb==0.15.5  # For experiment tracking and visualization
+mlflow==2.7.0  # For experiment tracking, model logging, and deployment
+
+# Hyperparameter tuning
+optuna==3.0.0
+
+# For preprocessing and text processing
+nltk==3.7
+spaCy==3.6.0
+transformers==4.34.0  # If using pre-trained transformers (BERT, GPT, etc.)
+
+# For data storage and manipulation
+h5py==3.9.0  # For saving large datasets or model weights
+sqlalchemy==2.0.21  # If using SQL databases
+
+# Miscellaneous utilities
+pyyaml==6.0  # For handling YAML configuration files
+tqdm==4.65.0  # For progress bars during training or data processing
+scikit-image==0.22.0  # If working with image data
+requests==2.31.0  # For HTTP requests (e.g., downloading datasets)
+
+# Jupyter Notebooks (for data exploration and analysis)
+jupyter==1.0.0
+ipython==8.16.1
+
+# For testing and validation
+pytest==7.5.0
+unittest==1.1.0
+
+# For version control and deployment
+gitpython==3.1.30  # For interacting with Git repositories
+
+# Optional: To run scripts and experiments in a specific environment
+python-dotenv==1.0.0  # For handling environment variables from `.env` files
