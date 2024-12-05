@@ -1,1 +1,20 @@
+# Ignore virtual environment
 vita-cap/
+
+# Ignore Data files
+data/
+
+# Ignore Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore environment files
+.env
+
+# Ignore IDE files (for example, VSCode)
+.vscode/
+
+# Ignore MacOS Finder files
+.DS_Store
