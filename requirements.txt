@@ -40,7 +40,6 @@ ipython
 
 # For testing and validation
 pytest
-unittest
 
 # For version control and deployment
 gitpython  # For interacting with Git repositories
