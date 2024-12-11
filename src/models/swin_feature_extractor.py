@@ -1,0 +1,69 @@
+import torch
+import os
+from torchvision import transforms
+from PIL import Image
+from transformers import SwinModel, SwinConfig
+from src.models.swin_transformer import SwinTransformerV2
+from src.models.feature_extractor import FeatureExtractor
+
+
+class SwinFeatureExtractor(FeatureExtractor):
+    def __init__(self, checkpoint_path):
+        self.checkpoint_path = checkpoint_path 
+        self.model = None
+
+    def load_model(self):
+        
+        if not os.path.exists(self.checkpoint_path):
+            model_name = os.path.splitext(os.path.basename(self.checkpoint_path))[0]
+            config = SwinConfig.from_pretrained(f'microsoft/{model_name}')
+            swin = SwinModel.from_pretrained(f'microsoft/{model_name}', config=config)
+            torch.save(swin.state_dict(), self.checkpoint_path)
+
+        self.model = SwinTransformerV2(img_size=384,
+                embed_dim=192,
+                depths=[2, 2, 18, 2],
+                num_heads=[6, 12, 24, 48],
+                window_size=12,
+                num_classes=1000)
+        
+        self.model.load_weights(
+            self.checkpoint_path
+        )        
+        self.model.eval()
+
+
+
+    def extract_features(self, image_path):
+        """Extract features from the input image."""
+        preprocess = transforms.Compose([
+            transforms.Resize((384, 384)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+
+        if self.model is None:
+            raise ValueError("Model is not loaded. Please call load_model() first.")
+
+        # Load and preprocess the image
+        image = Image.open(image_path).convert("RGB")
+        input = preprocess(image).unsqueeze(0)  # Add batch dimension
+        output = self.model(images=input)
+
+        return output
+    
+
+# Define a feature extraction function
+def extract_features(model, image_path):
+    preprocess = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
+    image = Image.open(image_path).convert('RGB')
+    input_tensor = preprocess(image).unsqueeze(0)  # Add batch dimension
+    
+    with torch.no_grad():
+        features = model.forward_features(input_tensor)  # Use forward_features for embeddings
+    return features
+

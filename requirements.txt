@@ -46,3 +46,5 @@ gitpython  # For interacting with Git repositories
 
 # Optional: To run scripts and experiments in a specific environment
 python-dotenv  # For handling environment variables from `.env` files
+
+timm
