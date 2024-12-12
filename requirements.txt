@@ -48,3 +48,4 @@ gitpython  # For interacting with Git repositories
 python-dotenv  # For handling environment variables from `.env` files
 
 timm
+ultralytics
