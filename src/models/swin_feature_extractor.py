@@ -49,6 +49,8 @@ class SwinFeatureExtractor(FeatureExtractor):
         image = Image.open(image_path).convert("RGB")
         input = preprocess(image).unsqueeze(0)  # Add batch dimension
         output = self.model(images=input)
-
+        swin_features = output.view(1, 144, 32, 48)  # reshape to pseudo 2D
+        swin_features = torch.nn.functional.interpolate(swin_features, size=(20, 20), mode='bilinear')
+        swin_features = swin_features.permute(0, 2, 3, 1).reshape(1, -1, 20, 20)
         return output
     

@@ -68,4 +68,5 @@ class FasterRCNNFeatureExtractor(FeatureExtractor):
         if not features:
             raise RuntimeError("Failed to extract features. Check the target layer and image input.")
 
-        return features[0]
+        fastrcnn_features = torch.nn.functional.interpolate(features[0], size=(20, 20), mode='bilinear')
+        return fastrcnn_features
