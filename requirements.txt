@@ -49,3 +49,4 @@ python-dotenv  # For handling environment variables from `.env` files
 
 timm
 ultralytics
+pycocotools
