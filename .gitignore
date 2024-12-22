@@ -2,7 +2,7 @@
 vita-cap/
 
 # Ignore Data files
-data/
+dataset/
 
 # Ignore Python cache files
 __pycache__/

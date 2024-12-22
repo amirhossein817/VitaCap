@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 import torchvision.transforms as transforms
-from model import ImageCaptioningModel
+from src.models import ImageCaptioningModel
 import pickle
 import argparse
 from PIL import Image
