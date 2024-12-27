@@ -4,6 +4,9 @@ vita-cap/
 # Ignore Data files
 dataset/
 
+#ignore checkpoints
+checkpoint/
+
 # Ignore Python cache files
 __pycache__/
 *.pyc

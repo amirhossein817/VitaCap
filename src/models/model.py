@@ -1,11 +1,11 @@
 import torch
 import torch.nn as nn
 import pickle
-from swin_feature_extractor import SwinFeatureExtractor
-from yolo_feature_extraction import YoloFeatureExtractor
-from faaster_rcnn_featuure_extractor import FasterRCNNFeatureExtractor
-from encoder import EncoderModule
-from decoder import DecoderModule
+from src.models.swin_feature_extractor import SwinFeatureExtractor
+from src.models.yolo_feature_extraction import YoloFeatureExtractor
+from src.models.faster_rcnn_featuure_extractor import FasterRCNNFeatureExtractor
+from src.models.encoder import EncoderModule
+from src.models.decoder import DecoderModule
 
 
 class ImageCaptioningModel(nn.Module):
