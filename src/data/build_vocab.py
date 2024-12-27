@@ -51,7 +51,7 @@ class VocabBuilder:
             Vocabulary: The generated vocabulary object.
         """
         counter = Counter()
-
+        nltk.download("punkt_tab")
         if self.dataset_type.lower() == "coco":
             coco = COCO(self.annotation_path)
             ids = coco.anns.keys()
