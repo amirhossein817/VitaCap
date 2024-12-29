@@ -1,154 +1,193 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset
-import torchvision.transforms as transforms
-from src.models import ImageCaptioningModel
-import pickle
-import argparse
-from PIL import Image
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 import os
+import yaml
+from src.data.dataset import ImageCaptioningDataset
+from src.utils import generate_caption_masks
+from src.models.model import ImageCaptioningModel
 
 
-# Custom Dataset Class
-class CaptionDataset(Dataset):
-    def __init__(self, image_folder, caption_file, vocab, transform=None):
-        """
-        Args:
-            image_folder (str): Path to the folder containing images.
-            caption_file (str): Path to the caption file (text file).
-            vocab (Vocabulary): Vocabulary object.
-            transform: Image preprocessing transformations.
-        """
-        self.image_folder = image_folder
-        self.vocab = vocab
-        self.transform = transform
-        self.data = []
+def load_config(config_path):
+    """
+    Load configuration from a YAML file.
 
-        # Load captions and corresponding image paths
-        with open(caption_file, "r") as f:
-            for line in f:
-                image_file, caption = line.strip().split("\t")
-                self.data.append((image_file, caption))
+    Args:
+        config_path (str): Path to the configuration file.
 
-    def __getitem__(self, idx):
-        image_path, caption = self.data[idx]
-        image = Image.open(os.path.join(self.image_folder, image_path)).convert("RGB")
-
-        if self.transform:
-            image = self.transform(image)
-
-        # Convert caption to word indices
-        tokens = caption.lower().split()
-        caption_idx = (
-            [self.vocab("<start>")]
-            + [self.vocab(token) for token in tokens]
-            + [self.vocab("<end>")]
-        )
-
-        return image, torch.tensor(caption_idx)
-
-    def __len__(self):
-        return len(self.data)
+    Returns:
+        dict: Configuration dictionary.
+    """
+    with open(config_path, "r") as file:
+        config = yaml.safe_load(file)
+    return config
 
 
-def train(model, dataloader, criterion, optimizer, device, num_epochs=10):
+def train_model(
+    model,
+    train_loader,
+    val_loader,
+    criterion,
+    optimizer,
+    scheduler,
+    num_epochs,
+    device,
+    save_path,
+):
+    """
+    Train the image captioning model.
+
+    Args:
+        model (nn.Module): The image captioning model.
+        train_loader (DataLoader): DataLoader for the training dataset.
+        val_loader (DataLoader): DataLoader for the validation dataset.
+        criterion (nn.Module): Loss function.
+        optimizer (torch.optim.Optimizer): Optimizer.
+        scheduler (torch.optim.lr_scheduler): Learning rate scheduler.
+        num_epochs (int): Number of epochs to train for.
+        device (torch.device): Device to train on (e.g., 'cuda' or 'cpu').
+        save_path (str): Path to save the trained model checkpoint.
+
+    Returns:
+        None
+    """
     model = model.to(device)
-    model.train()
 
     for epoch in range(num_epochs):
-        total_loss = 0
-        for images, captions in dataloader:
+        model.train()
+        train_loss = 0.0
+
+        for images, captions in tqdm(
+            train_loader, desc=f"Epoch {epoch + 1}/{num_epochs}"
+        ):
             images = images.to(device)
             captions = captions.to(device)
 
-            # Forward pass
-            outputs = model(images)
-            outputs = outputs.view(-1, outputs.size(-1))  # Reshape for loss computation
-            targets = captions.view(-1)  # Flatten captions
+            # Generate masks for the decoder
+            tgt_mask = generate_caption_masks(captions.size(1)).to(device)
 
-            # Compute loss
-            loss = criterion(outputs, targets)
+            # Forward pass
             optimizer.zero_grad()
+            outputs = model(images, captions[:, :-1], tgt_mask)
+
+            # Calculate loss
+            loss = criterion(
+                outputs.view(-1, outputs.size(-1)), captions[:, 1:].reshape(-1)
+            )
+
+            # Backward pass and optimization
             loss.backward()
             optimizer.step()
 
-            total_loss += loss.item()
+            train_loss += loss.item()
 
+        # Validation
+        val_loss = 0.0
+        model.eval()
+        with torch.no_grad():
+            for images, captions in val_loader:
+                images = images.to(device)
+                captions = captions.to(device)
+
+                tgt_mask = generate_caption_masks(captions.size(1)).to(device)
+
+                outputs = model(images, captions[:, :-1], tgt_mask)
+                loss = criterion(
+                    outputs.view(-1, outputs.size(-1)), captions[:, 1:].reshape(-1)
+                )
+
+                val_loss += loss.item()
+
+        # Adjust learning rate
+        scheduler.step()
+
+        # Logging
         print(
-            f"Epoch [{epoch+1}/{num_epochs}], Loss: {total_loss / len(dataloader):.4f}"
+            f"Epoch [{epoch + 1}/{num_epochs}]: Train Loss: {train_loss / len(train_loader):.4f}, Val Loss: {val_loss / len(val_loader):.4f}"
+        )
+
+        # Save the model
+        torch.save(
+            model.state_dict(), os.path.join(save_path, f"model_epoch_{epoch + 1}.pth")
         )
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train Image Captioning Model")
-    parser.add_argument(
-        "--image_folder", type=str, required=True, help="Path to image folder"
-    )
-    parser.add_argument(
-        "--caption_file", type=str, required=True, help="Path to caption text file"
-    )
-    parser.add_argument(
-        "--vocab_path", type=str, required=True, help="Path to vocabulary .pkl file"
-    )
-    parser.add_argument(
-        "--swin_ckpt",
-        type=str,
-        required=True,
-        help="Path to Swin Transformer checkpoint",
-    )
-    parser.add_argument(
-        "--yolo_ckpt", type=str, required=True, help="Path to YOLO checkpoint"
-    )
-    parser.add_argument(
-        "--rcnn_ckpt", type=str, required=True, help="Path to Faster R-CNN checkpoint"
-    )
-    parser.add_argument(
-        "--batch_size", type=int, default=16, help="Batch size for training"
-    )
-    parser.add_argument(
-        "--num_epochs", type=int, default=10, help="Number of training epochs"
-    )
-    parser.add_argument(
-        "--learning_rate", type=float, default=1e-4, help="Learning rate for optimizer"
-    )
-    args = parser.parse_args()
+    # Load configuration
+    config_path = "config.yaml"
+    config = load_config(config_path)
 
-    # Load Vocabulary
-    with open(args.vocab_path, "rb") as f:
-        vocab = pickle.load(f)
+    # Hyperparameters and paths
+    batch_size = config["training"]["batch_size"]
+    num_epochs = config["training"]["num_epochs"]
+    learning_rate = config["training"]["learning_rate"]
+    embed_size = config["model"]["embed_size"]
+    num_heads = config["model"]["num_heads"]
+    hidden_dim = config["model"]["hidden_dim"]
+    num_layers = config["model"]["num_layers"]
+    target_channels = config["model"]["target_channels"]
+    target_size = tuple(config["model"]["target_size"])
+    max_seq_length = config["model"]["max_seq_length"]
 
-    # Image Transformations
-    transform = transforms.Compose(
-        [
-            transforms.Resize((384, 384)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ]
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Paths
+    swin_ckpt = config["paths"]["swin_checkpoint"]
+    yolo_ckpt = config["paths"]["yolo_checkpoint"]
+    rcnn_ckpt = config["paths"]["rcnn_checkpoint"]
+    vocab_path = config["paths"]["vocab_path"]
+    train_data_path = config["paths"]["train_data_path"]
+    val_data_path = config["paths"]["val_data_path"]
+    save_path = config["paths"]["save_path"]
+
+    os.makedirs(save_path, exist_ok=True)
+
+    # Load dataset
+    train_dataset = ImageCaptioningDataset(
+        train_data_path, vocab_path, max_seq_length=max_seq_length
+    )
+    val_dataset = ImageCaptioningDataset(
+        val_data_path, vocab_path, max_seq_length=max_seq_length
     )
 
-    # Dataset and DataLoader
-    dataset = CaptionDataset(args.image_folder, args.caption_file, vocab, transform)
-    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
+    train_loader = DataLoader(
+        train_dataset, batch_size=batch_size, shuffle=True, num_workers=4
+    )
+    val_loader = DataLoader(
+        val_dataset, batch_size=batch_size, shuffle=False, num_workers=4
+    )
 
-    # Model Initialization
+    # Instantiate model
     model = ImageCaptioningModel(
-        swin_checkpoint=args.swin_ckpt,
-        yolo_checkpoint=args.yolo_ckpt,
-        rcnn_checkpoint=args.rcnn_ckpt,
-        vocab_path=args.vocab_path,
+        swin_checkpoint=swin_ckpt,
+        yolo_checkpoint=yolo_ckpt,
+        rcnn_checkpoint=rcnn_ckpt,
+        vocab_path=vocab_path,
+        embed_size=embed_size,
+        num_heads=num_heads,
+        hidden_dim=hidden_dim,
+        num_layers=num_layers,
+        target_channels=target_channels,
+        target_size=target_size,
+        max_seq_length=max_seq_length,
     )
 
-    # Loss and Optimizer
-    criterion = nn.CrossEntropyLoss(ignore_index=vocab("<pad>"))
-    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+    # Loss, optimizer, and scheduler
+    criterion = nn.CrossEntropyLoss(ignore_index=train_dataset.pad_idx)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
 
-    # Train the Model
-    train(
-        model,
-        dataloader,
-        criterion,
-        optimizer,
-        device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-        num_epochs=args.num_epochs,
+    # Train the model
+    train_model(
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        criterion=criterion,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        num_epochs=num_epochs,
+        device=device,
+        save_path=save_path,
     )
