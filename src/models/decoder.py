@@ -1,58 +1,127 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+from torch.nn import TransformerDecoder, TransformerDecoderLayer
 
 
 class DecoderModule(nn.Module):
-    def __init__(self, input_channels, target_channels, output_size):
-        """
-        A basic decoder module that upsamples and refines the input features.
-
-        Args:
-            input_channels (int): Number of input channels from the encoder output.
-            target_channels (int): Desired number of output channels.
-            output_size (tuple): Spatial dimensions of the final output (height, width).
-        """
+    def __init__(
+        self,
+        vocab_size,
+        embed_size,
+        num_heads,
+        hidden_dim,
+        num_layers,
+        dropout=0.1,
+        max_seq_length=50,
+    ):
         super(DecoderModule, self).__init__()
-        self.upsample = nn.Upsample(
-            size=output_size, mode="bilinear", align_corners=True
-        )
-        self.conv1 = nn.Conv2d(
-            input_channels, target_channels, kernel_size=3, padding=1
-        )
-        self.conv2 = nn.Conv2d(
-            target_channels, target_channels, kernel_size=3, padding=1
-        )
-        self.norm = nn.LayerNorm([target_channels, output_size[0], output_size[1]])
-        self.activation = nn.ReLU()
 
-    def forward(self, encoded_features):
+        self.embed_size = embed_size
+        self.max_seq_length = max_seq_length
+
+        # Embedding layers
+        self.embedding = nn.Embedding(vocab_size, embed_size)
+        self.positional_encoding = PositionalEncoding(
+            embed_size, max_seq_length, dropout
+        )
+
+        # Transformer decoder layers
+        decoder_layer = TransformerDecoderLayer(
+            d_model=embed_size,
+            nhead=num_heads,
+            dim_feedforward=hidden_dim,
+            dropout=dropout,
+        )
+        self.transformer_decoder = TransformerDecoder(
+            decoder_layer, num_layers=num_layers
+        )
+
+        # Output linear layer
+        self.fc_out = nn.Linear(embed_size, vocab_size)
+
+        # Initialize weights
+        self._initialize_weights()
+
+    def forward(self, tgt, memory, tgt_mask=None, memory_mask=None):
         """
-        Forward pass of the decoder.
-
         Args:
-            encoded_features (torch.Tensor): Input feature map from the encoder.
-
+            tgt (torch.Tensor): Target sequence tokens [batch_size, seq_len].
+            memory (torch.Tensor): Encoded image features [batch_size, seq_len, embed_size].
+            tgt_mask (torch.Tensor, optional): Target mask [seq_len, seq_len].
+            memory_mask (torch.Tensor, optional): Memory mask [seq_len, seq_len].
         Returns:
-            torch.Tensor: Refined and upsampled feature map.
+            torch.Tensor: Logits over the vocabulary [batch_size, seq_len, vocab_size].
         """
-        x = self.upsample(encoded_features)  # Upsample to the target size
-        x = self.conv1(x)  # First convolution
-        x = self.activation(x)  # Activation
-        x = self.conv2(x)  # Second convolution
-        x = self.activation(x)  # Activation
-        x = self.norm(x)  # Layer normalization
-        return x
+        # Embed the target sequence and add positional encoding
+        tgt_embedded = self.embedding(tgt) * torch.sqrt(
+            torch.tensor(self.embed_size, dtype=torch.float32)
+        )
+        tgt_embedded = self.positional_encoding(tgt_embedded)
+
+        # Pass through the Transformer decoder
+        decoded_output = self.transformer_decoder(
+            tgt=tgt_embedded.permute(
+                1, 0, 2
+            ),  # Transformer expects [seq_len, batch_size, embed_size]
+            memory=memory.permute(1, 0, 2),
+            tgt_mask=tgt_mask,
+            memory_mask=memory_mask,
+        )
+
+        # Convert to vocabulary logits
+        output_logits = self.fc_out(
+            decoded_output.permute(1, 0, 2)
+        )  # [batch_size, seq_len, vocab_size]
+        return output_logits
+
+    def _initialize_weights(self):
+        nn.init.xavier_uniform_(self.fc_out.weight)
+        nn.init.zeros_(self.fc_out.bias)
+
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, embed_size, max_seq_length, dropout):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        # Create positional encoding matrix
+        position = torch.arange(0, max_seq_length).unsqueeze(1).float()
+        div_term = torch.exp(
+            torch.arange(0, embed_size, 2).float()
+            * -(torch.log(torch.tensor(10000.0)) / embed_size)
+        )
+        pe = torch.zeros(max_seq_length, embed_size)
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)  # [1, max_seq_length, embed_size]
+
+        self.register_buffer("pe", pe)
+
+    def forward(self, x):
+        x = x + self.pe[:, : x.size(1)]  # Add positional encoding to input
+        return self.dropout(x)
 
 
 # Example usage
 if __name__ == "__main__":
+    vocab_size = 5000
+    embed_size = 256
+    num_heads = 8
+    hidden_dim = 512
+    num_layers = 6
+    max_seq_length = 50
+
     decoder = DecoderModule(
-        input_channels=256, target_channels=3, output_size=(224, 224)
+        vocab_size,
+        embed_size,
+        num_heads,
+        hidden_dim,
+        num_layers,
+        max_seq_length=max_seq_length,
     )
+    tgt = torch.randint(0, vocab_size, (32, max_seq_length))  # Dummy target tokens
+    memory = torch.randn(32, 20, embed_size)  # Dummy encoded image features
 
-    # Dummy input feature map
-    encoded_features = torch.randn(1, 256, 20, 20)
-
-    # Decode the features
-    decoded_output = decoder(encoded_features)
-    print(f"Decoded Output Shape: {decoded_output.shape}")
+    output = decoder(tgt, memory)
+    print("Output shape:", output.shape)  # [batch_size, seq_len, vocab_size]
