@@ -7,6 +7,7 @@ from torchvision import transforms
 from PIL import Image
 from src.models.feature_extractor import FeatureExtractor
 
+
 class FasterRCNNFeatureExtractor(FeatureExtractor):
     def __init__(self, checkpoint_path):
         self.checkpoint_path = checkpoint_path
@@ -24,7 +25,7 @@ class FasterRCNNFeatureExtractor(FeatureExtractor):
                 f.write(response.content)
             print("Model downloaded successfully.")
 
-        backbone = resnet_fpn_backbone('resnet101', pretrained=False)
+        backbone = resnet_fpn_backbone("resnet101", pretrained=False)
         self.model = FasterRCNN(backbone, num_classes=91)  # 91 classes for COCO dataset
 
         # Load model weights from the checkpoint
@@ -42,9 +43,11 @@ class FasterRCNNFeatureExtractor(FeatureExtractor):
         if self.model is None:
             raise ValueError("Model is not loaded. Please call load_model() first.")
 
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-        ])
+        transform = transforms.Compose(
+            [
+                transforms.ToTensor(),
+            ]
+        )
 
         features = []
 
@@ -52,7 +55,9 @@ class FasterRCNNFeatureExtractor(FeatureExtractor):
             features.append(output)
 
         # Register a hook on the layer of interest (adjust based on model structure)
-        target_layer = self.model.backbone.body.layer3  # Example: the final ResNet layer
+        target_layer = (
+            self.model.backbone.body.layer3
+        )  # Example: the final ResNet layer
         hook_handle = target_layer.register_forward_hook(hook)
 
         # Preprocess the image
@@ -66,7 +71,11 @@ class FasterRCNNFeatureExtractor(FeatureExtractor):
         hook_handle.remove()
 
         if not features:
-            raise RuntimeError("Failed to extract features. Check the target layer and image input.")
+            raise RuntimeError(
+                "Failed to extract features. Check the target layer and image input."
+            )
 
-        fastrcnn_features = torch.nn.functional.interpolate(features[0], size=(20, 20), mode='bilinear')
+        fastrcnn_features = torch.nn.functional.interpolate(
+            features[0], size=(20, 20), mode="bilinear"
+        )
         return fastrcnn_features

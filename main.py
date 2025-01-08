@@ -1,11 +1,13 @@
 import torch
 import os
 import yaml
+import pickle
 from src.models.model import ImageCaptioningModel
 from src.utils import generate_caption_masks
 from src.data.dataset import ImageCaptioningDataset
 from PIL import Image
 import torchvision.transforms as transforms
+from src.data.build_vocab import Vocabulary
 
 
 def load_config(config_path):
@@ -60,7 +62,7 @@ def generate_caption(model, image, vocab, max_seq_length, device):
         str: Generated caption.
     """
     model.eval()
-    image = image.to(device)
+    # image = image.to(device)
 
     # Start token
     caption = [vocab.word2idx["<start>"]]
@@ -91,7 +93,7 @@ def generate_caption(model, image, vocab, max_seq_length, device):
 
 if __name__ == "__main__":
     # Load configuration
-    config_path = "config.yaml"
+    config_path = "./src/configs/config.yaml"
     config = load_config(config_path)
 
     # Hyperparameters and paths
@@ -99,7 +101,7 @@ if __name__ == "__main__":
     yolo_ckpt = config["paths"]["yolo_checkpoint"]
     rcnn_ckpt = config["paths"]["rcnn_checkpoint"]
     vocab_path = config["paths"]["vocab_path"]
-    model_checkpoint = config["paths"]["model_checkpoint"]
+    # model_checkpoint = config["paths"]["model_checkpoint"]
     max_seq_length = config["model"]["max_seq_length"]
     image_path = "./image.jpg"  # Replace with your test image path
 
@@ -107,7 +109,7 @@ if __name__ == "__main__":
 
     # Load vocabulary
     with open(vocab_path, "rb") as f:
-        vocab = torch.load(f)
+        vocab = pickle.load(f)
 
     # Instantiate model
     model = ImageCaptioningModel(
@@ -125,12 +127,12 @@ if __name__ == "__main__":
     )
 
     # Load model weights
-    model.load_state_dict(torch.load(model_checkpoint, map_location=device))
+    # model.load_state_dict(torch.load(model_checkpoint, map_location=device))
     model = model.to(device)
 
     # Preprocess input image
-    image = preprocess_image(image_path)
+    # image = preprocess_image(image_path)
 
     # Generate caption
-    caption = generate_caption(model, image, vocab, max_seq_length, device)
+    caption = generate_caption(model, image_path, vocab, max_seq_length, device)
     print("Generated Caption:", caption)

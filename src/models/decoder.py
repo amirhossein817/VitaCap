@@ -14,6 +14,7 @@ class DecoderModule(nn.Module):
         num_layers,
         dropout=0.1,
         max_seq_length=50,
+        memory_dim=512,
     ):
         super(DecoderModule, self).__init__()
 
@@ -25,7 +26,8 @@ class DecoderModule(nn.Module):
         self.positional_encoding = PositionalEncoding(
             embed_size, max_seq_length, dropout
         )
-
+        # Memory projection layer
+        self.memory_projection = nn.Linear(memory_dim, embed_size)
         # Transformer decoder layers
         decoder_layer = TransformerDecoderLayer(
             d_model=embed_size,
@@ -58,7 +60,13 @@ class DecoderModule(nn.Module):
             torch.tensor(self.embed_size, dtype=torch.float32)
         )
         tgt_embedded = self.positional_encoding(tgt_embedded)
-
+        if memory.dim() == 4:  # [batch_size, channels, height, width]
+            batch_size, channels, height, width = memory.size()
+            seq_len = height * width
+            memory = memory.view(batch_size, channels, seq_len).permute(
+                0, 2, 1
+            )  # Project memory to match embed_size
+        memory = self.memory_projection(memory)
         # Pass through the Transformer decoder
         decoded_output = self.transformer_decoder(
             tgt=tgt_embedded.permute(

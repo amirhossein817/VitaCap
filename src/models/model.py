@@ -15,7 +15,7 @@ class ImageCaptioningModel(nn.Module):
         yolo_checkpoint,
         rcnn_checkpoint,
         vocab_path,
-        embed_size=256,
+        embed_size=512,
         num_heads=8,
         hidden_dim=512,
         num_layers=6,
@@ -40,7 +40,7 @@ class ImageCaptioningModel(nn.Module):
             max_seq_length (int): Maximum sequence length for captions.
         """
         super(ImageCaptioningModel, self).__init__()
-
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # Feature Extractors
         self.swin_extractor = SwinFeatureExtractor(swin_checkpoint)
         self.yolo_extractor = YoloFeatureExtractor(yolo_checkpoint)
@@ -48,7 +48,7 @@ class ImageCaptioningModel(nn.Module):
 
         # Encoder
         self.encoder = EncoderModule(
-            target_channels=target_channels, target_size=target_size
+            target_channels=target_channels, target_size=target_size, device=self.device
         )
 
         # Decoder
@@ -96,11 +96,11 @@ class ImageCaptioningModel(nn.Module):
             torch.Tensor: Predicted caption logits.
         """
         # Feature Extraction
-        swin_features = self.swin_extractor.extract_features(image)
+        swin_features = self.swin_extractor.extract_features(image).to(self.device)
         yolo_features = self.yolo_extractor.extract_features(
             self.yolo_extractor.model, image
-        )
-        rcnn_features = self.rcnn_extractor.extract_features(image)
+        ).to(self.device)
+        rcnn_features = self.rcnn_extractor.extract_features(image).to(self.device)
 
         # Encoder: Fuse and encode features
         encoded_features = self.encoder(swin_features, yolo_features, rcnn_features)
