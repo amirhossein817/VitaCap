@@ -1,52 +1,20 @@
-# Data manipulation and processing
-pandas
-numpy
-scikit-learn
-scipy
-matplotlib
-seaborn
-plotly
-
-# Deep learning framework (PyTorch)
+# Core Libraries
 torch
 torchvision
-torchaudio
+numpy
+tqdm
+Pillow
+scipy
 
-# For experimentation and model training
-tensorboard
-wandb  # For experiment tracking and visualization
-mlflow # For experiment tracking, model logging, and deployment
-
-# Hyperparameter tuning
-optuna
-
-# For preprocessing and text processing
-nltk
-spaCy
-transformers  # If using pre-trained transformers (BERT, GPT, etc.)
-
-# For data storage and manipulation
-h5py  # For saving large datasets or model weights
-
-# Miscellaneous utilities
-pyyaml  # For handling YAML configuration files
-tqdm  # For progress bars during training or data processing
-scikit-image  # If working with image data
-requests  # For HTTP requests (e.g., downloading datasets)
-
-# Jupyter Notebooks (for data exploration and analysis)
-jupyter
-ipython
-
-# For testing and validation
-pytest
-
-# For version control and deployment
-gitpython  # For interacting with Git repositories
-
-# Optional: To run scripts and experiments in a specific environment
-python-dotenv  # For handling environment variables from `.env` files
-
-timm
-ultralytics
+# Dataset and Evaluation
 pycocotools
+pycocoevalcap
+nltk
+
+# Configuration and Utilities
+PyYAML
+opencv-python
+
+# Optional (for YOLO and Swin Transformer)
+ultralytics
+transformers
