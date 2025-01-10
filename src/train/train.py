@@ -5,9 +5,11 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 import os
 import yaml
+import pickle
 from src.data.dataset import ImageCaptioningDataset
-from src.utils import generate_caption_masks
 from src.models.model import ImageCaptioningModel
+from src.utils import generate_caption_masks
+from eval import evaluate_model  # Import the evaluation function
 
 
 def load_config(config_path):
@@ -35,9 +37,12 @@ def train_model(
     num_epochs,
     device,
     save_path,
+    vocab,
+    max_seq_length,
+    dataset_type,
 ):
     """
-    Train the image captioning model.
+    Train the image captioning model and evaluate after each epoch.
 
     Args:
         model (nn.Module): The image captioning model.
@@ -49,6 +54,9 @@ def train_model(
         num_epochs (int): Number of epochs to train for.
         device (torch.device): Device to train on (e.g., 'cuda' or 'cpu').
         save_path (str): Path to save the trained model checkpoint.
+        vocab (Vocabulary): Vocabulary object.
+        max_seq_length (int): Maximum sequence length for captions.
+        dataset_type (str): Dataset type, either 'coco' or 'flickr'.
 
     Returns:
         None
@@ -83,7 +91,10 @@ def train_model(
 
             train_loss += loss.item()
 
-        # Validation
+        # Adjust learning rate
+        scheduler.step()
+
+        # Validation and evaluation
         val_loss = 0.0
         model.eval()
         with torch.no_grad():
@@ -100,13 +111,20 @@ def train_model(
 
                 val_loss += loss.item()
 
-        # Adjust learning rate
-        scheduler.step()
+        # Evaluate metrics
+        metrics = evaluate_model(
+            model, val_loader, vocab, device, max_seq_length, dataset_type
+        )
 
         # Logging
         print(
-            f"Epoch [{epoch + 1}/{num_epochs}]: Train Loss: {train_loss / len(train_loader):.4f}, Val Loss: {val_loss / len(val_loader):.4f}"
+            f"Epoch [{epoch + 1}/{num_epochs}]: "
+            f"Train Loss: {train_loss / len(train_loader):.4f}, "
+            f"Val Loss: {val_loss / len(val_loader):.4f}"
         )
+        print("Evaluation Metrics:")
+        for metric, score in metrics.items():
+            print(f"{metric}: {score:.4f}")
 
         # Save the model
         torch.save(
@@ -117,7 +135,8 @@ def train_model(
 if __name__ == "__main__":
     # Load configuration
     config_path = "config.yaml"
-    config = load_config(config_path)
+    with open(config_path, "r") as file:
+        config = yaml.safe_load(file)
 
     # Hyperparameters and paths
     batch_size = config["training"]["batch_size"]
@@ -130,6 +149,7 @@ if __name__ == "__main__":
     target_channels = config["model"]["target_channels"]
     target_size = tuple(config["model"]["target_size"])
     max_seq_length = config["model"]["max_seq_length"]
+    dataset_type = config["dataset"]["type"]  # Read dataset type from config
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -138,11 +158,15 @@ if __name__ == "__main__":
     yolo_ckpt = config["paths"]["yolo_checkpoint"]
     rcnn_ckpt = config["paths"]["rcnn_checkpoint"]
     vocab_path = config["paths"]["vocab_path"]
-    train_data_path = config["paths"]["train_data_path"]
-    val_data_path = config["paths"]["val_data_path"]
+    train_data_path = config["dataset"]["train_data_path"]
+    val_data_path = config["dataset"]["val_data_path"]
     save_path = config["paths"]["save_path"]
 
     os.makedirs(save_path, exist_ok=True)
+
+    # Load vocabulary
+    with open(vocab_path, "rb") as f:
+        vocab = pickle.load(f)
 
     # Load dataset
     train_dataset = ImageCaptioningDataset(
@@ -190,4 +214,7 @@ if __name__ == "__main__":
         num_epochs=num_epochs,
         device=device,
         save_path=save_path,
+        vocab=vocab,
+        max_seq_length=max_seq_length,
+        dataset_type=dataset_type,  # Pass dataset type
     )
