@@ -1,9 +1,7 @@
 import torch
 import os
 from torchvision import transforms
-from PIL import Image
 from src.models.feature_extractor import FeatureExtractor
-from torchvision import transforms
 from ultralytics import YOLO
 
 
@@ -27,30 +25,37 @@ class YoloFeatureExtractor(FeatureExtractor):
             )  # Save the model to the specified path
         self.model.eval()
 
-    # Define a feature extraction function
-    def extract_features(self, model, image_path):
+    def extract_features(self, model, image_tensor):
+        """
+        Extract features from the input image tensor.
+
+        Args:
+            model (YOLO): The YOLO model.
+            image_tensor (torch.Tensor): Preprocessed image tensor of shape [B, C, H, W].
+
+        Returns:
+            torch.Tensor: Extracted features of shape [B, C, H', W'].
+        """
         if self.model is None:
             raise ValueError("Model is not loaded. Please call load_model() first.")
-        transform = transforms.Compose(
-            [
-                transforms.Resize((384, 384)),  # Resize to model's input size
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                ),  # ImageNet normalization
-            ]
-        )
-        features = []
 
-        def hook(module, input, output):
-            features.append(output)
+        # Ensure the input tensor is on the correct device
+        device = next(model.parameters()).device
+        image_tensor = image_tensor.to(device)
 
-        target_layer = model.model.model[10]  # Adjust the index to the desired layer
-        hook_handle = target_layer.register_forward_hook(hook)
-        input_image = Image.open(image_path).convert("RGB")
-        input_tensor = transform(input_image).unsqueeze(0)  # Add batch dimension
+        # Forward pass through the YOLO model's initial layers (stem)
         with torch.no_grad():
-            _ = model(input_tensor)
-        extracted_features = features[0]
-        hook_handle.remove()
-        return extracted_features
+            # Access the stem (initial layers)
+            stem = model.model.model[0]
+            features = stem(image_tensor)  # Pass through the stem
+
+            # Access the feature extraction layers (e.g., the first CSPLayer)
+            feature_extractor = model.model.model[1]  # Adjust this index as needed
+            features = feature_extractor(features)  # Extract features
+
+        # Resize features to the target size (20x20)
+        features = torch.nn.functional.interpolate(
+            features, size=(20, 20), mode="bilinear"
+        )
+
+        return features

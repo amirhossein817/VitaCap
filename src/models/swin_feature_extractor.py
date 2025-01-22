@@ -2,9 +2,8 @@ import torch
 import os
 from torchvision import transforms
 from PIL import Image
-from transformers import SwinModel, SwinConfig
-from src.models.swin_transformer import SwinTransformerV2
 from src.models.feature_extractor import FeatureExtractor
+from src.models.swin_transformer import SwinTransformerV2
 
 
 class SwinFeatureExtractor(FeatureExtractor):
@@ -13,56 +12,60 @@ class SwinFeatureExtractor(FeatureExtractor):
         self.model = None
 
     def load_model(self):
-
         if not os.path.exists(self.checkpoint_path):
             model_name = os.path.splitext(os.path.basename(self.checkpoint_path))[0]
-            config = SwinConfig.from_pretrained(f"microsoft/{model_name}")
-            swin = SwinModel.from_pretrained(f"microsoft/{model_name}", config=config)
-            torch.save(swin.state_dict(), self.checkpoint_path)
-
-        self.model = SwinTransformerV2(
-            img_size=384,
-            embed_dim=192,
-            depths=[2, 2, 18, 2],
-            num_heads=[6, 12, 24, 48],
-            window_size=12,
-            num_classes=1000,
-        )
-
-        self.model.load_weights(self.checkpoint_path)
+            self.model = SwinTransformerV2(
+                img_size=384,
+                embed_dim=192,
+                depths=[2, 2, 18, 2],
+                num_heads=[6, 12, 24, 48],
+                window_size=12,
+                num_classes=1000,
+            )
+            torch.save(self.model.state_dict(), self.checkpoint_path)
+        else:
+            self.model = SwinTransformerV2(
+                img_size=384,
+                embed_dim=192,
+                depths=[2, 2, 18, 2],
+                num_heads=[6, 12, 24, 48],
+                window_size=12,
+                num_classes=1000,
+            )
+            self.model.load_weights(self.checkpoint_path)
         self.model.eval()
 
-    def extract_features(self, image_path):
-        """Extract features from the input image."""
-        preprocess = transforms.Compose(
-            [
-                transforms.Resize((384, 384)),
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                ),
-            ]
-        )
+    def extract_features(self, image_tensor):
+        """
+        Extract features from the input image tensor.
 
+        Args:
+            image_tensor (torch.Tensor): Preprocessed image tensor of shape [B, C, H, W].
+
+        Returns:
+            torch.Tensor: Extracted features of shape [B, C, H', W'].
+        """
         if self.model is None:
             raise ValueError("Model is not loaded. Please call load_model() first.")
 
-        # Load and preprocess the image
-        image = Image.open(image_path).convert("RGB")
+        # Ensure the input tensor is on the correct device
+        device = next(self.model.parameters()).device
+        image_tensor = image_tensor.to(device)
 
-        # print(type(image_path))
-        # if isinstance(image_path, str):  # If input is a file path
-        #   image = Image.open(image_path).convert("RGB")
-        #   image = preprocess(image).unsqueeze(0)  # Add batch dimension
-        # elif isinstance(image, torch.Tensor):
-        #   if len(image.shape) == 3:  # Add batch dimension if missing
-        #     image = image.unsqueeze(0)
-        # else:
-        #   raise ValueError("Input must be a file path or a preprocessed tensor.")
+        # Forward pass through the Swin Transformer
+        with torch.no_grad():
+            features = self.model(image_tensor)  # Shape: [B, L, C]
 
-        input = preprocess(image).unsqueeze(0)  # Add batch dimension
-        output = self.model(input)
-        output = output.view(1, 144, 32, 48)  # reshape to pseudo 2D
-        output = torch.nn.functional.interpolate(output, size=(20, 20), mode="bilinear")
-        output = output.permute(0, 2, 3, 1).reshape(1, -1, 20, 20)
-        return output
+        # Reshape features to [B, C, H, W]
+        batch_size, seq_len, channels = features.shape
+        height = width = int(seq_len**0.5)  # Assuming L = H * W
+        features = features.permute(0, 2, 1).reshape(
+            batch_size, channels, height, width
+        )
+
+        # Interpolate features to the target size (20x20)
+        features = torch.nn.functional.interpolate(
+            features, size=(20, 20), mode="bilinear"
+        )
+
+        return features

@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torchvision import transforms
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import os
@@ -9,7 +10,8 @@ import pickle
 from src.data.dataset import ImageCaptioningDataset
 from src.models.model import ImageCaptioningModel
 from src.utils import generate_caption_masks
-from eval import evaluate_model  # Import the evaluation function
+from src.train.eval import evaluate_model  # Import the evaluation function
+from src.data.data_loader import get_loader
 
 
 def load_config(config_path):
@@ -64,17 +66,16 @@ def train_model(
     model = model.to(device)
 
     for epoch in range(num_epochs):
-        model.train()
-        train_loss = 0.0
+        # model.train()
+        # train_loss = 0.0
 
-        for images, captions in tqdm(
-            train_loader, desc=f"Epoch {epoch + 1}/{num_epochs}"
-        ):
+        for i, (images, captions, lengths) in enumerate(data_loader_train):
+
             images = images.to(device)
             captions = captions.to(device)
 
             # Generate masks for the decoder
-            tgt_mask = generate_caption_masks(captions.size(1)).to(device)
+            tgt_mask = generate_caption_masks(captions.size(1) - 1).to(device)
 
             # Forward pass
             optimizer.zero_grad()
@@ -95,36 +96,36 @@ def train_model(
         scheduler.step()
 
         # Validation and evaluation
-        val_loss = 0.0
-        model.eval()
-        with torch.no_grad():
-            for images, captions in val_loader:
-                images = images.to(device)
-                captions = captions.to(device)
+        # val_loss = 0.0
+        # model.eval()
+        # with torch.no_grad():
+        #     for images, captions in val_loader:
+        #         images = images.to(device)
+        #         captions = captions.to(device)
 
-                tgt_mask = generate_caption_masks(captions.size(1)).to(device)
+        #         tgt_mask = generate_caption_masks(captions.size(1)).to(device)
 
-                outputs = model(images, captions[:, :-1], tgt_mask)
-                loss = criterion(
-                    outputs.view(-1, outputs.size(-1)), captions[:, 1:].reshape(-1)
-                )
+        #         outputs = model(images, captions[:, :-1], tgt_mask)
+        #         loss = criterion(
+        #             outputs.view(-1, outputs.size(-1)), captions[:, 1:].reshape(-1)
+        #         )
 
-                val_loss += loss.item()
+        #         val_loss += loss.item()
 
         # Evaluate metrics
-        metrics = evaluate_model(
-            model, val_loader, vocab, device, max_seq_length, dataset_type
-        )
+        # metrics = evaluate_model(
+        #     model, val_loader, vocab, device, max_seq_length, dataset_type
+        # )
 
         # Logging
         print(
             f"Epoch [{epoch + 1}/{num_epochs}]: "
             f"Train Loss: {train_loss / len(train_loader):.4f}, "
-            f"Val Loss: {val_loss / len(val_loader):.4f}"
+            # f"Val Loss: {val_loss / len(val_loader):.4f}"
         )
-        print("Evaluation Metrics:")
-        for metric, score in metrics.items():
-            print(f"{metric}: {score:.4f}")
+        # print("Evaluation Metrics:")
+        # for metric, score in metrics.items():
+        #     print(f"{metric}: {score:.4f}")
 
         # Save the model
         torch.save(
@@ -144,6 +145,7 @@ if __name__ == "__main__":
     learning_rate = config["training"]["learning_rate"]
     embed_size = config["model"]["embed_size"]
     num_heads = config["model"]["num_heads"]
+    num_workers = config["model"]["worker"]
     hidden_dim = config["model"]["hidden_dim"]
     num_layers = config["model"]["num_layers"]
     target_channels = config["model"]["target_channels"]
@@ -158,9 +160,15 @@ if __name__ == "__main__":
     yolo_ckpt = config["paths"]["yolo_checkpoint"]
     rcnn_ckpt = config["paths"]["rcnn_checkpoint"]
     vocab_path = config["paths"]["vocab_path"]
-    train_data_path = config["dataset"]["train_data_path"]
+    # train_data_path = config["dataset"]["train_data_path"]
     val_data_path = config["dataset"]["val_data_path"]
     save_path = config["paths"]["save_path"]
+
+    # Dataset
+    train_data_path = config["paths"]["train_data_path"]
+    val_data_path = config["paths"]["val_data_path"]
+    train_data_annotaions = config["paths"]["train_data_annotaions"]
+    val_data_annotaions = config["paths"]["train_data_annotaions"]
 
     os.makedirs(save_path, exist_ok=True)
 
@@ -168,19 +176,40 @@ if __name__ == "__main__":
     with open(vocab_path, "rb") as f:
         vocab = pickle.load(f)
 
-    # Load dataset
-    train_dataset = ImageCaptioningDataset(
-        train_data_path, vocab_path, max_seq_length=max_seq_length
-    )
-    val_dataset = ImageCaptioningDataset(
-        val_data_path, vocab_path, max_seq_length=max_seq_length
+    image_size = config["transform"]["size"]
+    transform = transforms.Compose(
+        [
+            transforms.RandomCrop(image_size),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+        ]
     )
 
-    train_loader = DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True, num_workers=4
-    )
-    val_loader = DataLoader(
-        val_dataset, batch_size=batch_size, shuffle=False, num_workers=4
+    # # Load dataset
+    # train_dataset = ImageCaptioningDataset(
+    #     train_data_path, vocab_path, max_seq_length=max_seq_length
+    # )
+    # val_dataset = ImageCaptioningDataset(
+    #     val_data_path, vocab_path, max_seq_length=max_seq_length
+    # )
+
+    # train_loader = DataLoader(
+    #     train_dataset, batch_size=batch_size, shuffle=True, num_workers=4
+    # )
+    # val_loader = DataLoader(
+    #     val_dataset, batch_size=batch_size, shuffle=False, num_workers=4
+    # )
+
+    # Build data loader
+    data_loader_train = get_loader(
+        train_data_path,
+        train_data_annotaions,
+        vocab,
+        transform,
+        batch_size,
+        shuffle=True,
+        num_workers= num_workers,
     )
 
     # Instantiate model
@@ -199,15 +228,15 @@ if __name__ == "__main__":
     )
 
     # Loss, optimizer, and scheduler
-    criterion = nn.CrossEntropyLoss(ignore_index=train_dataset.pad_idx)
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    criterion = nn.CrossEntropyLoss(ignore_index=0)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
 
     # Train the model
     train_model(
         model=model,
-        train_loader=train_loader,
-        val_loader=val_loader,
+        train_loader=data_loader_train,
+        val_loader=None,
         criterion=criterion,
         optimizer=optimizer,
         scheduler=scheduler,

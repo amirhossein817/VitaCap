@@ -2,8 +2,11 @@ import torch
 import argparse
 from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
-from model import ImageCaptioningModel
-from modules import CaptionDataset, get_loss_function, get_optimizer, get_scheduler
+from src.models.model import ImageCaptioningModel
+from data.dataset import ImageCaptioningDataset
+from .loss import get_loss_function
+from .scheduler import get_optimizer
+from .scheduler import get_scheduler
 import pickle
 
 
@@ -84,7 +87,9 @@ if __name__ == "__main__":
     )
 
     # Dataset and DataLoader
-    dataset = CaptionDataset(args.image_folder, args.caption_file, vocab, transform)
+    dataset = ImageCaptioningDataset(
+        args.image_folder, args.caption_file, vocab, transform
+    )
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
 
     # Model Initialization

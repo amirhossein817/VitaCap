@@ -3,6 +3,9 @@ training:
   num_epochs: 20
   learning_rate: 0.0001
 
+transform:
+  size: 384
+
 model:
   embed_size: 512
   num_heads: 8
@@ -11,6 +14,7 @@ model:
   target_channels: 512
   target_size: [20, 20]
   max_seq_length: 50
+  worker: 12
 
 paths:
   swin_checkpoint: "./checkpoint/feature_extraction/swinv2-large-patch4-window12to24-192to384-22kto1k-ft.pth"
@@ -20,6 +24,8 @@ paths:
   save_path: "./checkpoints/model/"
 
   dataset:
-  type: flickr  # or "coco"
+  type: coco  # or "coco"
   train_data_path: path/to/train_data.json  # or train_data.txt for Flickr
   val_data_path: path/to/val_data.json      # or val_data.txt for Flickr
+  train_data_annotaions: path/to/data
+  val_data_annotaions: path/to/data

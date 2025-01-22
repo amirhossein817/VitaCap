@@ -1,11 +1,10 @@
 import torch
 import os
 import requests
+from torchvision import transforms
+from src.models.feature_extractor import FeatureExtractor
 from torchvision.models.detection import FasterRCNN
 from torchvision.models.detection.backbone_utils import resnet_fpn_backbone
-from torchvision import transforms
-from PIL import Image
-from src.models.feature_extractor import FeatureExtractor
 
 
 class FasterRCNNFeatureExtractor(FeatureExtractor):
@@ -38,44 +37,32 @@ class FasterRCNNFeatureExtractor(FeatureExtractor):
         self.model.load_state_dict(state_dict)
         self.model.eval()
 
-    def extract_features(self, image_path):
-        """Extract features from the specified layer in the Faster R-CNN model."""
+    def extract_features(self, image_tensor):
+        """
+        Extract features from the input image tensor.
+
+        Args:
+            image_tensor (torch.Tensor): Preprocessed image tensor of shape [B, C, H, W].
+
+        Returns:
+            torch.Tensor: Extracted features of shape [B, C, H', W'].
+        """
         if self.model is None:
             raise ValueError("Model is not loaded. Please call load_model() first.")
 
-        transform = transforms.Compose(
-            [
-                transforms.ToTensor(),
-            ]
-        )
+        # Ensure the input tensor is on the correct device
+        device = next(self.model.parameters()).device
+        image_tensor = image_tensor.to(device)
 
-        features = []
-
-        def hook(module, input, output):
-            features.append(output)
-
-        # Register a hook on the layer of interest (adjust based on model structure)
-        target_layer = (
-            self.model.backbone.body.layer3
-        )  # Example: the final ResNet layer
-        hook_handle = target_layer.register_forward_hook(hook)
-
-        # Preprocess the image
-        input_image = Image.open(image_path).convert("RGB")
-        input_tensor = transform(input_image).unsqueeze(0)  # Add batch dimension
-
+        # Forward pass through the Faster R-CNN model
         with torch.no_grad():
-            _ = self.model(input_tensor)
+            features = self.model.backbone(
+                image_tensor
+            )  # Extract features from the backbone
 
-        # Remove the hook after extracting features
-        hook_handle.remove()
-
-        if not features:
-            raise RuntimeError(
-                "Failed to extract features. Check the target layer and image input."
-            )
-
-        fastrcnn_features = torch.nn.functional.interpolate(
-            features[0], size=(20, 20), mode="bilinear"
+        # Resize features to the target size (20x20)
+        features = torch.nn.functional.interpolate(
+            features["0"], size=(20, 20), mode="bilinear"
         )
-        return fastrcnn_features
+
+        return features
