@@ -54,8 +54,8 @@ class FeatureFusion(nn.Module):
         Returns:
             torch.Tensor: Fused feature map.
         """
-        print(feature1.shape)
-        print(feature2.shape)
+        # print(feature1.shape)
+        # print(feature2.shape)
         # Align both input features
         feature1 = self.align_features(feature1, "feature1")
         feature2 = self.align_features(feature2, "feature2")

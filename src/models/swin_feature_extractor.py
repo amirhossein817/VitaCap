@@ -33,6 +33,8 @@ class SwinFeatureExtractor(FeatureExtractor):
                 num_classes=1000,
             )
             self.model.load_weights(self.checkpoint_path)
+        for _name, _weight in self.model.named_parameters():
+            _weight.requires_grad = False
         self.model.eval()
 
     def extract_features(self, image_tensor):

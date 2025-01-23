@@ -6,7 +6,7 @@ import pickle
 import numpy as np
 import nltk
 from PIL import Image
-from build_vocab import Vocabulary
+from src.data.build_vocab import Vocabulary
 from pycocotools.coco import COCO
 
 
@@ -23,9 +23,7 @@ class CocoDataset(data.Dataset):
             transform: image transformer.
         """
         self.root = root
-        self.coco = COCO(
-            json
-        ) 
+        self.coco = COCO(json)
         self.ids = list(self.coco.anns.keys())  # list of ids
 
         self.vocab = vocab

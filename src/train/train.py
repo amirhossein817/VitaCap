@@ -7,6 +7,7 @@ from tqdm import tqdm
 import os
 import yaml
 import pickle
+import numpy as np
 from src.data.dataset import ImageCaptioningDataset
 from src.models.model import ImageCaptioningModel
 from src.utils import generate_caption_masks
@@ -67,9 +68,9 @@ def train_model(
 
     for epoch in range(num_epochs):
         # model.train()
-        # train_loss = 0.0
+        train_loss = 0.0
 
-        for i, (images, captions, lengths) in enumerate(data_loader_train):
+        for i, (images, captions, lengths) in enumerate(train_loader):
 
             images = images.to(device)
             captions = captions.to(device)
@@ -91,6 +92,16 @@ def train_model(
             optimizer.step()
 
             train_loss += loss.item()
+            print(
+                "Epoch [{}/{}], Step [{}/{}], train_Loss: {:.4f}, Perplexity: {:5.4f}".format(
+                    epoch,
+                    num_epochs,
+                    i,
+                    len(train_loader),
+                    loss.item(),
+                    np.exp(loss.item()),
+                )
+            )
 
         # Adjust learning rate
         scheduler.step()
@@ -209,7 +220,7 @@ if __name__ == "__main__":
         transform,
         batch_size,
         shuffle=True,
-        num_workers= num_workers,
+        num_workers=num_workers,
     )
 
     # Instantiate model

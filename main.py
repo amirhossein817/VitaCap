@@ -8,6 +8,21 @@ from src.data.dataset import ImageCaptioningDataset
 from PIL import Image
 import torchvision.transforms as transforms
 from src.data.build_vocab import Vocabulary
+from src.train.train import train_model
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torchvision import transforms
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+import os
+import yaml
+import pickle
+from src.data.dataset import ImageCaptioningDataset
+from src.models.model import ImageCaptioningModel
+from src.utils import generate_caption_masks
+from src.train.eval import evaluate_model  # Import the evaluation function
+from src.data.data_loader import get_loader
 
 
 def load_config(config_path):
@@ -25,114 +40,117 @@ def load_config(config_path):
     return config
 
 
-def preprocess_image(image_path):
-    """
-    Preprocess the input image for inference.
+# Load configuration
+config_path = "/content/VitaCap/src/configs/config.yaml"
+with open(config_path, "r") as file:
+    config = yaml.safe_load(file)
 
-    Args:
-        image_path (str): Path to the input image.
+# Hyperparameters and paths
+batch_size = config["training"]["batch_size"]
+num_epochs = config["training"]["num_epochs"]
+learning_rate = config["training"]["learning_rate"]
+embed_size = config["model"]["embed_size"]
+num_heads = config["model"]["num_heads"]
+num_workers = config["model"]["worker"]
+hidden_dim = config["model"]["hidden_dim"]
+num_layers = config["model"]["num_layers"]
+target_channels = config["model"]["target_channels"]
+target_size = tuple(config["model"]["target_size"])
+max_seq_length = config["model"]["max_seq_length"]
+dataset_type = config["dataset"]["type"]  # Read dataset type from config
 
-    Returns:
-        torch.Tensor: Preprocessed image tensor.
-    """
-    transform = transforms.Compose(
-        [
-            transforms.Resize((384, 384)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ]
-    )
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    image = Image.open(image_path).convert("RGB")
-    return transform(image).unsqueeze(0)  # Add batch dimension
+# Paths
+swin_ckpt = config["paths"]["swin_checkpoint"]
+yolo_ckpt = config["paths"]["yolo_checkpoint"]
+rcnn_ckpt = config["paths"]["rcnn_checkpoint"]
+vocab_path = config["paths"]["vocab_path"]
+# train_data_path = config["dataset"]["train_data_path"]
+val_data_path = config["dataset"]["val_data_path"]
+save_path = config["paths"]["save_path"]
 
+# Dataset
+train_data_path = config["dataset"]["train_data_path"]
+val_data_path = config["dataset"]["val_data_path"]
+train_data_annotaions = config["dataset"]["train_data_annotaions"]
+val_data_annotaions = config["dataset"]["train_data_annotaions"]
 
-def generate_caption(model, image, vocab, max_seq_length, device):
-    """
-    Generate a caption for the input image.
+os.makedirs(save_path, exist_ok=True)
 
-    Args:
-        model (ImageCaptioningModel): Trained image captioning model.
-        image (torch.Tensor): Preprocessed image tensor.
-        vocab (Vocabulary): Vocabulary object for decoding indices.
-        max_seq_length (int): Maximum sequence length for captions.
-        device (torch.device): Device to perform inference on.
+# Load vocabulary
+with open(vocab_path, "rb") as f:
+    vocab = pickle.load(f)
 
-    Returns:
-        str: Generated caption.
-    """
-    model.eval()
-    # image = image.to(device)
-
-    # Start token
-    caption = [vocab.word2idx["<start>"]]
-
-    for _ in range(max_seq_length):
-        caption_tensor = torch.tensor(caption, dtype=torch.long).unsqueeze(0).to(device)
-        tgt_mask = generate_caption_masks(len(caption)).to(device)
-
-        with torch.no_grad():
-            output = model(image, caption_tensor, tgt_mask)
-
-        # Get the next word
-        next_word_idx = torch.argmax(output[0, -1, :]).item()
-        caption.append(next_word_idx)
-
-        # Stop if end token is generated
-        if next_word_idx == vocab.word2idx["<end>"]:
-            break
-
-    # Convert indices to words
-    caption_words = [
-        vocab.idx2word[idx]
-        for idx in caption
-        if idx not in [vocab.word2idx["<start>"], vocab.word2idx["<end>"]]
+image_size = config["transform"]["size"]
+transform = transforms.Compose(
+    [
+        transforms.Pad((0, 0, image_size, image_size), fill=0, padding_mode="constant"),
+        transforms.RandomCrop(image_size),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
     ]
-    return " ".join(caption_words)
+)
 
+# # Load dataset
+# train_dataset = ImageCaptioningDataset(
+#     train_data_path, vocab_path, max_seq_length=max_seq_length
+# )
+# val_dataset = ImageCaptioningDataset(
+#     val_data_path, vocab_path, max_seq_length=max_seq_length
+# )
 
-if __name__ == "__main__":
-    # Load configuration
-    config_path = "./src/configs/config.yaml"
-    config = load_config(config_path)
+# train_loader = DataLoader(
+#     train_dataset, batch_size=batch_size, shuffle=True, num_workers=4
+# )
+# val_loader = DataLoader(
+#     val_dataset, batch_size=batch_size, shuffle=False, num_workers=4
+# )
 
-    # Hyperparameters and paths
-    swin_ckpt = config["paths"]["swin_checkpoint"]
-    yolo_ckpt = config["paths"]["yolo_checkpoint"]
-    rcnn_ckpt = config["paths"]["rcnn_checkpoint"]
-    vocab_path = config["paths"]["vocab_path"]
-    # model_checkpoint = config["paths"]["model_checkpoint"]
-    max_seq_length = config["model"]["max_seq_length"]
-    image_path = "./image.jpg"  # Replace with your test image path
+# Build data loader
+data_loader_train = get_loader(
+    train_data_path,
+    train_data_annotaions,
+    vocab,
+    transform,
+    batch_size,
+    shuffle=True,
+    num_workers=num_workers,
+)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# Instantiate model
+model = ImageCaptioningModel(
+    swin_checkpoint=swin_ckpt,
+    yolo_checkpoint=yolo_ckpt,
+    rcnn_checkpoint=rcnn_ckpt,
+    vocab_path=vocab_path,
+    embed_size=embed_size,
+    num_heads=num_heads,
+    hidden_dim=hidden_dim,
+    num_layers=num_layers,
+    target_channels=target_channels,
+    target_size=target_size,
+    max_seq_length=max_seq_length,
+)
 
-    # Load vocabulary
-    with open(vocab_path, "rb") as f:
-        vocab = pickle.load(f)
+# Loss, optimizer, and scheduler
+criterion = nn.CrossEntropyLoss(ignore_index=0)
+optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
 
-    # Instantiate model
-    model = ImageCaptioningModel(
-        swin_checkpoint=swin_ckpt,
-        yolo_checkpoint=yolo_ckpt,
-        rcnn_checkpoint=rcnn_ckpt,
-        vocab_path=vocab_path,
-        embed_size=config["model"]["embed_size"],
-        num_heads=config["model"]["num_heads"],
-        hidden_dim=config["model"]["hidden_dim"],
-        num_layers=config["model"]["num_layers"],
-        target_channels=config["model"]["target_channels"],
-        target_size=tuple(config["model"]["target_size"]),
-        max_seq_length=max_seq_length,
-    )
-
-    # Load model weights
-    # model.load_state_dict(torch.load(model_checkpoint, map_location=device))
-    model = model.to(device)
-
-    # Preprocess input image
-    # image = preprocess_image(image_path)
-
-    # Generate caption
-    caption = generate_caption(model, image_path, vocab, max_seq_length, device)
-    print("Generated Caption:", caption)
+# Train the model
+train_model(
+    model=model,
+    train_loader=data_loader_train,
+    val_loader=None,
+    criterion=criterion,
+    optimizer=optimizer,
+    scheduler=scheduler,
+    num_epochs=num_epochs,
+    device=device,
+    save_path=save_path,
+    vocab=vocab,
+    max_seq_length=max_seq_length,
+    dataset_type=dataset_type,  # Pass dataset type
+)
